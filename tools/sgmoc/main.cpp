@@ -23,6 +23,10 @@
 #include "sgASTConsumer.h"
 
 class MocAction : public clang::ASTFrontendAction {
+
+private:
+	sgASTConsumer *mComsumerPtr;
+
 protected:
 
     virtual std::unique_ptr<clang::ASTConsumer> CreateASTConsumer(clang::CompilerInstance &CI,
@@ -47,13 +51,47 @@ protected:
 		// Override the resources path.
 		//CI.getHeaderSearchOpts().ResourceDir = ResourceFilesPath;
 
-        return std::unique_ptr<sgASTConsumer>(new sgASTConsumer(CI));
+		mComsumerPtr = new sgASTConsumer(CI);
+        return std::unique_ptr<sgASTConsumer>(mComsumerPtr);
     }
+
+	virtual void EndSourceFileAction()
+	{
+		//clang::CompilerInstance &CI = getCompilerInstance();
+		//clang::ASTConsumer &consumer = CI.getASTConsumer();
+
+		std::cout << "\n\n\nParsing End";
+		std::cout << "\n\n\nClasses:";
+		for (int i = 0; i < mComsumerPtr->mExportClasses.size(); ++i)
+		{
+			std::cout << "\n\n===========================";
+			const ClassDef &def = mComsumerPtr->mExportClasses[i];
+			std::cout << "\nName: " << def.name;
+			std::cout << "\nType Name: " << def.typeName;
+			std::cout << "\nBase Name: " << def.baseClassTypeName;
+			std::cout << "\nProperty:";
+			for (int ip = 0; ip < def.properties.size(); ++ip)
+			{
+				const PropertyDef &pdef = def.properties[ip];
+				std::cout << "\n\t" << pdef.name << " [" << pdef.typeName << "]";
+				if (pdef.isPointer) std::cout << " <pointer>";
+				if (pdef.isEnum) std::cout << " <enum>";
+				if (pdef.isArray) std::cout << " <array>";
+			}
+
+		}
+
+
+		ASTFrontendAction::EndSourceFileAction();
+	}
 
 public:
     // CHECK
     virtual bool hasCodeCompletionSupport() const { return true; }
 };
+
+std::string GetFileName(const std::string& path);
+std::string GetFileExtension(const std::string& path);
 
 int main(int argc, const char **argv) 
 {
@@ -78,18 +116,72 @@ int main(int argc, const char **argv)
 					break;
 			}
 		}
-		Argv.push_back(argv[I]);
+		Argv.push_back(argv[I]);        
 	}
 
 	llvm::IntrusiveRefCntPtr<clang::FileManager> Files(
 		new clang::FileManager(clang::FileSystemOptions()));
 
-	//Argv.push_back("aa.h");
+	Argv.push_back("D:\\projects\\llvm\\tools\\clang\\tools\\sgmoc\\sample.h");
+	//Argv.push_back("D:\\projects\\llvm\\tools\\clang\\tools\\sgmoc\\sgMetaDef.h");
 
-	clang::tooling::ToolInvocation Inv(Argv, new MocAction, Files.get());
+	MocAction *action = new MocAction;
+	clang::tooling::ToolInvocation Inv(Argv, action, Files.get());
 	//Inv.mapVirtualFile(f->filename, {f->content , f->size } );
 
-	return !Inv.run();
+	bool ret = !Inv.run();
+
+	int i = 0;
+	++i;
+	return ret;
 
  }
 
+
+std::string GetFileExtension(const std::string& path)
+{
+	size_t posDot = path.find_last_of('.');
+	if (posDot != std::string::npos)
+	{
+		return path.substr(posDot + 1, path.size() - posDot);
+	}
+
+	return "";
+}
+std::string GetFileName(const std::string& path)
+{
+	size_t pos0 = path.find_last_of('/');
+	size_t pos1 = path.find_last_of('\\', pos0);
+
+	size_t posDot = path.find_last_of('.');
+
+	size_t pos;
+
+	if (pos1 == std::string::npos)
+	{
+		if (pos0 == std::string::npos)
+		{
+			pos = 0;
+		}
+		else
+		{
+			pos = pos0 + 1;
+		}
+	}
+	else
+	{
+		pos = pos1 + 1;
+	}
+
+	size_t size;
+	if (posDot == std::string::npos)
+	{
+		size = path.size() - pos;
+	}
+	else
+	{
+		size = posDot - pos;
+	}
+
+	return path.substr(pos, size);
+}
