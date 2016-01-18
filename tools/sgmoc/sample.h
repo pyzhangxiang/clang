@@ -1,4 +1,6 @@
-#include "sgMetaDef.h"
+#include "sgClassMetaDef.h"
+#include "aa.h"
+#include <map>
 
 namespace Hehe {
 	void Func1();
@@ -15,7 +17,7 @@ namespace Hehe {
 	};
 
 
-	class Room : public XX
+	class Room : public PP
 	{
 		SG_META_OBJECT(Room)
 	public:

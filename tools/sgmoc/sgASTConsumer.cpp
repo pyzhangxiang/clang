@@ -146,17 +146,20 @@ void sgASTConsumer::ParseClass(clang::CXXRecordDecl *RD, bool uplevelExport)
                 llvm::StringRef key = S->getMessage()->getString();
                 if (key == "sg_meta_object") 
 				{
+					Def.mt = MT_OBJ;
 					localToExport = true;
-
+					
 					std::cout << "\n\tsg_meta_object";
                 }
 				else if (key == "sg_meta_object_abstract")
 				{
+					Def.mt = MT_OBJ_ABSTRACT;
 					localToExport = true;
 					std::cout << "\n\tsg_meta_object_abstract";
 				}
 				else if (key == "sg_meta_other")
 				{
+					Def.mt = MT_OTHER;
 					localToExport = true;
 					std::cout << "\n\tsg_meta_other";
 				}
@@ -285,11 +288,11 @@ void sgASTConsumer::ParseEnum(clang::EnumDecl *ED, bool uplevelExport)
 	clang::EnumDecl::enumerator_range range = ED->enumerators();
 	for (auto it = range.begin(); it != range.end(); ++it)
 	{
-		EnumPropertyDef pd;
+		EnumValueDef pd;
 		std::string name = it->getNameAsString();
 		pd.name = name;
 		pd.value = *(it->getInitVal().getRawData());
-		def.properties.push_back(pd);
+		def.values.push_back(pd);
 
 		std::cout << "\n\tEnumConstant: " << name << " " << *(it->getInitVal().getRawData());
 	}

@@ -29,13 +29,21 @@ void sgPPCallbacks::FileChanged(clang::SourceLocation Loc, clang::PPCallbacks::F
 	
     if (Reason != ExitFile)
         return;
+	auto FMain = mPP.getSourceManager().getFileEntryForID(SM.getMainFileID());
+	llvm::StringRef mainName = "";
+	if(FMain)
+		mainName = FMain->getName();
+
+	auto FCurr = mPP.getSourceManager().getFileEntryForID(curFID);
+	llvm::StringRef currName = "";
+	if(FCurr) currName = FCurr->getName();
 
     auto F = mPP.getSourceManager().getFileEntryForID(PrevFID);
     if (!F)
         return;
 
     llvm::StringRef name = F->getName();
-    if (name.endswith("sgMetaDef.h")) {
+    if (name.endswith("sgClassMetaDef.h")) {
         InjectQObjectDefs(Loc);
     }
 }

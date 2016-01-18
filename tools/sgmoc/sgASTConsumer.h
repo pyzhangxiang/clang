@@ -7,7 +7,7 @@
 
 class sgPPCallbacks;
 
-struct EnumPropertyDef
+struct EnumValueDef
 {
 	std::string name;
 	int value;
@@ -16,7 +16,7 @@ struct EnumDef
 {
 	clang::EnumDecl *enumDecl;
 	std::string name;
-	std::vector<EnumPropertyDef> properties;
+	std::vector<EnumValueDef> values;
 };
 
 struct PropertyDef
@@ -31,9 +31,18 @@ struct PropertyDef
 	PropertyDef() : isPointer(false), isEnum(false), isArray(false) {}
 };
 
+enum MetaType
+{
+	MT_OBJ,
+	MT_OBJ_ABSTRACT,
+	MT_OTHER
+};
 struct ClassDef
 {
 	clang::CXXRecordDecl *classDecl;
+	
+	MetaType mt;
+
 	std::string name;
 	std::string typeName;	// full namespace path
 	std::string baseClassTypeName;
