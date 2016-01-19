@@ -47,3 +47,5 @@ void sgPPCallbacks::FileChanged(clang::SourceLocation Loc, clang::PPCallbacks::F
         InjectQObjectDefs(Loc);
     }
 }
+
+

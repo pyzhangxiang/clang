@@ -32,17 +32,26 @@
 std::string GetFileName(const std::string& path);
 std::string GetFileExtension(const std::string& path);
 std::string ReplaceString(const std::string src, const std::string &oldstr, const std::string &newstr);
+std::string ReplaceChar(const std::string src, char oldc, char newc);
 std::string Md5File(const std::string filename);
-bool Moc(const std::string arg0, const std::string &inputFilePath, const std::string &outputDir);
+const char* GetRelativeFilename(const std::string &dir, const std::string &filepath);
+
+bool Moc(const std::string arg0, const std::string &outputDir
+	, const std::vector<std::string> &inputFiles
+	, const std::vector<std::string> &includeDirs);
 
 class MocAction : public clang::ASTFrontendAction {
 
 private:
 	sgASTConsumer *mComsumerPtr;
-	std::string mOutputFilePath;
+	std::string mOutputDir;
+	std::string mInputFilePath;
 
 public:
-	MocAction(const std::string outputfilepath) : clang::ASTFrontendAction(), mOutputFilePath(outputfilepath) {}
+	MocAction(const std::string &outDir, const std::string &inputfile) 
+		: clang::ASTFrontendAction()
+		, mOutputDir(outDir)
+		, mInputFilePath(inputfile){}
 
 protected:
     virtual std::unique_ptr<clang::ASTConsumer> CreateASTConsumer(clang::CompilerInstance &CI,
@@ -78,11 +87,14 @@ protected:
 
 		std::cout << "\n\n\nParsing End";
 
-		std::ofstream out(mOutputFilePath.c_str());
+		std::string outfile = mOutputDir + "gen_" + GetFileName(mInputFilePath) + ".cpp";
+		std::ofstream out(outfile.c_str());
 		if (out.fail())
 		{
 			return;
 		}
+
+		out << "#include \"" << GetRelativeFilename(mOutputDir, mInputFilePath) << "\"\n";
 
 		std::cout << "\n\n\nEnums:";
 		for (size_t i = 0; i < mComsumerPtr->mExportEnums.size(); ++i)
@@ -153,6 +165,8 @@ protected:
 			out << "\n" << "SG_META_DEF_END";
 
 		}
+		
+		out << "\n";
 
 		out.flush();
 		out.close();
@@ -169,7 +183,7 @@ class MocFrontendActionFactory : public clang::tooling::FrontendActionFactory {
 public:
 	std::string mOutputFilePath;
 	MocFrontendActionFactory(const std::string outFilePath) : mOutputFilePath(outFilePath) {}
-	clang::FrontendAction *create() override { return new MocAction(mOutputFilePath); }
+	clang::FrontendAction *create() override { return new MocAction(mOutputFilePath, ""); }
 };
 
 
@@ -185,6 +199,10 @@ int main(int argc, const char **argv)
 		return 1;
 	}
 
+	std::vector<std::string> includePathes;
+	std::vector<std::string> inFiles;
+	std::string outDir;
+
 	int outdirIndex = 1;
 	int infileIndex = 2;
 	bool forceMoc = false;
@@ -198,6 +216,18 @@ int main(int argc, const char **argv)
 				outdirIndex = 2;
 				infileIndex = 3;
 			}
+			else if (argv[i][1] == 'I')
+			{
+				includePathes.push_back(argv[i]);
+			}
+			else if (strcmp(argv[i], "-od") == 0)
+			{
+				outDir = argv[++i];
+			}
+		}
+		else
+		{
+			inFiles.push_back(argv[i]);
 		}
 	}
 
@@ -208,7 +238,6 @@ int main(int argc, const char **argv)
 	}
 
 	std::cout << "\n============================= Start SG Moc =====================";
-	std::string outDir = argv[outdirIndex];
 	if (outDir[outDir.size() - 1] != '/' || outDir[outDir.size() - 1] != '\\')
 	{
 		outDir += "/";
@@ -228,15 +257,9 @@ int main(int argc, const char **argv)
 		}
 	}
 
-	std::vector<std::string> inFiles;
-	inFiles.reserve(argc - infileIndex);
-	for (int i = infileIndex; i < argc; ++i)
-	{
-		inFiles.push_back(argv[i]);
-		//std::cout << " " << argv[i];
-	}
 	std::cout << "\n";
 
+	std::vector<std::string> needMocFiles;
 	for (size_t i = 0; i < inFiles.size(); ++i)
 	{
 		std::string &filepath = inFiles[i];
@@ -261,11 +284,10 @@ int main(int argc, const char **argv)
 			mHeaderMd5[filepath] = newmd5;
 		}
 		
-
-		Moc(argv[0], filepath, outDir);
-		
-
+		needMocFiles.push_back(filepath);
 	}
+
+	Moc(argv[0], outDir, needMocFiles, includePathes);
 
 	if (!forceMoc)
 	{
@@ -312,6 +334,14 @@ std::string ReplaceString(const std::string src, const std::string &oldstr, cons
 		ret.replace(pos, oldstr.size(), newstr);
 		pos = ret.find(oldstr, pos);
 	}
+	return ret;
+}
+
+std::string ReplaceChar(const std::string src, char oldc, char newc)
+{
+	std::string ret = src;
+
+	std::replace(ret.begin(), ret.end(), oldc, newc);
 	return ret;
 }
 
@@ -381,45 +411,170 @@ std::string Md5File(const std::string filepath)
 
 }
 
-bool Moc(const std::string arg0, const std::string &inputFilePath, const std::string &outputDir)
+bool Moc(const std::string arg0, const std::string &outputDir
+	, const std::vector<std::string> &inputFiles
+	, const std::vector<std::string> &includeDirs)
 {
 	std::vector<std::string> Argv;
 	Argv.push_back(arg0);
-	//Argv.push_back("-x");  // Type need to go first
-	//Argv.push_back("c++");
-	//Argv.push_back("-fms-compatibility-version=19");
+	//Argv.push_back(inputFilePath);
+	
+	Argv.push_back("-x");  // Type need to go first
+	Argv.push_back("c++");
+	Argv.push_back("-fPIE");
+	Argv.push_back("-fPIC");
+	Argv.push_back("-w");
+	Argv.push_back("-fms-compatibility-version=19");
 	//Argv.push_back("-Wall");
 	//Argv.push_back("-Wmicrosoft-include");
-	//Argv.push_back("-ID:\\projects\\llvm\\tools\\clang\\tools\\sgmoc\\aa");
-	//Argv.push_back("-std=c++11");
-	//Argv.push_back("-fsyntax-only");
+	
+	Argv.push_back("-std=c++11");
+	Argv.push_back("-fsyntax-only");
+
+	//Argv.push_back("-I\"D:\\projects\\llvm\\tools\\clang\\tools\\sgmoc\\aa\"");
+	//Argv.push_back("-ID:\\projects\\llvm\\tools\\clang\\tools\\sgmoc");
+	Argv.insert(Argv.end(), includeDirs.begin(), includeDirs.end());
+	//Argv.push_back("/TP");
+	//Argv.push_back("/Zs");
 
 	llvm::IntrusiveRefCntPtr<clang::FileManager> Files(
 		new clang::FileManager(clang::FileSystemOptions()));
 
-	Argv.push_back(inputFilePath);
+	std::shared_ptr<clang::PCHContainerOperations> PCHContainerOps = std::make_shared<clang::PCHContainerOperations>();
 
-	Argv.push_back("-x");  // Type need to go first
-	Argv.push_back("c++");
-	Argv.push_back("-fms-compatibility-version=19");
-	//Argv.push_back("-Wall");
-	//Argv.push_back("-Wmicrosoft-include");
-	Argv.push_back("-ID:\\projects\\llvm\\tools\\clang\\tools\\sgmoc\\aa");
-	Argv.push_back("-ID:\\projects\\llvm\\tools\\clang\\tools\\sgmoc");
-	Argv.push_back("-std=c++11");
-	Argv.push_back("-fsyntax-only"); 
+	for (const std::string &inputFilePath : inputFiles)
+	{
+		std::vector<std::string> args;
+		args.reserve(Argv.size() + 1);
+		args.insert(args.end(), Argv.begin(), Argv.end());
+		args.push_back(inputFilePath);
 
-	std::cout << "\n\n\n=========================start" << inputFilePath;
-	std::string outfile = outputDir + "gen_" + GetFileName(inputFilePath) + ".cpp";
-	MocAction *action = new MocAction(outfile);
+		std::cout << "\n\n\n=========================start" << inputFilePath;
+		
+		MocAction *action = new MocAction(outputDir, inputFilePath);
 
-	static std::shared_ptr<clang::PCHContainerOperations> PCHContainerOps = std::make_shared<clang::PCHContainerOperations>();
-	clang::tooling::ToolInvocation Inv(Argv, action, Files.get(), PCHContainerOps);
-	//Inv.mapVirtualFile(f->filename, {f->content , f->size } );
+		clang::tooling::ToolInvocation Inv(args, action, Files.get(), PCHContainerOps);
+		//Inv.mapVirtualFile(f->filename, {f->content , f->size } );
 
-	bool ret = Inv.run();
+		bool ret = Inv.run();
 
-	std::cout << "\n=========================end" << inputFilePath;
+		std::cout << "\n=========================end" << inputFilePath;
+	}
 
-	return ret;
+	return true;
+}
+
+// GetRelativeFilename(), by Rob Fisher.
+// rfisher@iee.org
+// http://come.to/robfisher
+// includes
+
+// defines
+#define MAX_FILENAME_LEN 512
+// The number of characters at the start of an absolute filename.  e.g. in DOS,
+// absolute filenames start with "X:\" so this value should be 3, in UNIX they start
+// with "\" so this value should be 1.
+#define ABSOLUTE_NAME_START 3
+// set this to '\\' for DOS or '/' for UNIX
+#define SLASH '\\'
+#define InvSLASH '/'
+// Given the absolute current directory and an absolute file name, returns a relative file name.
+// For example, if the current directory is C:\foo\bar and the filename C:\foo\whee\text.txt is given,
+// GetRelativeFilename will return ..\whee\text.txt.
+const char* GetRelativeFilename(const std::string &dir, const std::string &filepath)
+{
+	std::string cd = ReplaceChar(dir, '\\', '/');
+	std::string af = ReplaceChar(filepath, '\\', '/');
+
+	const char *currentDirectory = cd.c_str();
+	const char *absoluteFilename = af.c_str();
+
+	// declarations - put here so this should work in a C compiler
+	int afMarker = 0, rfMarker = 0;
+	int cdLen = 0, afLen = 0;
+	int i = 0;
+	int levels = 0;
+	static char relativeFilename[MAX_FILENAME_LEN + 1];
+	cdLen = strlen(currentDirectory);
+	afLen = strlen(absoluteFilename);
+
+	// make sure the names are not too long or too short
+	if (cdLen > MAX_FILENAME_LEN || cdLen < ABSOLUTE_NAME_START + 1 ||
+		afLen > MAX_FILENAME_LEN || afLen < ABSOLUTE_NAME_START + 1)
+	{
+		return NULL;
+	}
+
+	// Handle DOS names that are on different drives:
+	if (currentDirectory[0] != absoluteFilename[0])
+	{
+		// not on the same drive, so only absolute filename will do
+		strcpy(relativeFilename, absoluteFilename);
+		return relativeFilename;
+	}
+	// they are on the same drive, find out how much of the current directory
+	// is in the absolute filename
+	i = ABSOLUTE_NAME_START;
+	while (i < afLen && i < cdLen && currentDirectory[i] == absoluteFilename[i])
+	{
+		i++;
+	}
+	if (i == cdLen && (absoluteFilename[i] == InvSLASH || absoluteFilename[i - 1] == InvSLASH))
+	{
+		// the whole current directory name is in the file name,
+		// so we just trim off the current directory name to get the
+		// current file name.
+		if (absoluteFilename[i] == InvSLASH)
+		{
+			// a directory name might have a trailing slash but a relative
+			// file name should not have a leading one...
+			i++;
+		}
+		strcpy(relativeFilename, &absoluteFilename[i]);
+		return relativeFilename;
+	}
+	// The file is not in a child directory of the current directory, so we
+	// need to step back the appropriate number of parent directories by
+	// using "..\"s.  First find out how many levels deeper we are than the
+	// common directory
+	afMarker = i;
+	levels = 1;
+	// count the number of directory levels we have to go up to get to the
+	// common directory
+	while (i < cdLen)
+	{
+		i++;
+		if (currentDirectory[i] == InvSLASH)
+		{
+			// make sure it's not a trailing slash
+			i++;
+			if (currentDirectory[i] != '\0')
+			{
+				levels++;
+			}
+		}
+	}
+	// move the absolute filename marker back to the start of the directory name
+	// that it has stopped in.
+	while (afMarker > 0 && absoluteFilename[afMarker - 1] != InvSLASH)
+	{
+		afMarker--;
+	}
+	// check that the result will not be too long
+	if (levels * 3 + afLen - afMarker > MAX_FILENAME_LEN)
+	{
+		return NULL;
+	}
+
+	// add the appropriate number of "..\"s.
+	rfMarker = 0;
+	for (i = 0; i < levels; i++)
+	{
+		relativeFilename[rfMarker++] = '.';
+		relativeFilename[rfMarker++] = '.';
+		relativeFilename[rfMarker++] = InvSLASH;
+	}
+	// copy the rest of the filename into the result string
+	strcpy(&relativeFilename[rfMarker], &absoluteFilename[afMarker]);
+	return relativeFilename;
 }

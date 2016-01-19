@@ -45,6 +45,13 @@ bool sgASTConsumer::HandleTopLevelDecl(clang::DeclGroupRef GroupRef)
 	}
 	clang::Decl *decl = *GroupRef.begin();
 	
+	clang::SourceManager &SM = mCompilerInstance.getPreprocessor().getSourceManager();
+	//clang::StringRef fname = SM.getFilename(decl->getLocation());
+	if (SM.getFileID(decl->getLocation()) != SM.getMainFileID())
+	{
+		return true;
+	}
+
 	TopLevelParseDecl(decl);
 		
 	return true;
@@ -306,6 +313,7 @@ void sgASTConsumer::ParseEnum(clang::EnumDecl *ED, bool uplevelExport)
 
 void sgASTConsumer::TopLevelParseDecl(clang::Decl *decl)
 {
+	
 	if (clang::FunctionDecl *MD = llvm::dyn_cast<clang::FunctionDecl>(decl))
 	{
 		// global function
@@ -348,4 +356,23 @@ void sgASTConsumer::TopLevelParseDecl(clang::Decl *decl)
 			TopLevelParseDecl(*it);
 		}
 	}
+}
+
+void sgASTConsumer::HandleTranslationUnit(clang::ASTContext& Ctx)
+{
+	// all parsed, output
+// 	SGVisitor visitor;
+// 	visitor.consumer = this;
+// 	visitor.context = &Ctx;
+// 	visitor.TraverseDecl(Ctx.getTranslationUnitDecl());
+}
+
+bool SGVisitor::VisitDecl(clang::Decl *D)
+{
+	if (!consumer->mPPCallbacks->IsInMainFile())
+	{
+		return true;
+	}
+	consumer->TopLevelParseDecl(D);
+	return true;
 }

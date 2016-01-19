@@ -4,6 +4,7 @@
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/AST/ASTConsumer.h>
 #include <clang/AST/Decl.h>
+#include <clang/AST/RecursiveASTVisitor.h>
 
 class sgPPCallbacks;
 
@@ -50,10 +51,22 @@ struct ClassDef
 	std::vector<PropertyDef> properties;
 };
 
+class sgASTConsumer;
+class SGVisitor : public clang::RecursiveASTVisitor<SGVisitor>
+{
+	public:
+	clang::ASTContext *context;
+	sgASTConsumer *consumer;
+
+public:
+	bool VisitDecl(clang::Decl *D);
+};
+
+
 class sgASTConsumer : public clang::ASTConsumer
 {
 protected:
-    protected:
+    public:
     clang::CompilerInstance &mCompilerInstance;
     clang::ASTContext *mASTContext;
 
@@ -75,11 +88,9 @@ public:
 
 	virtual bool HandleTopLevelDecl(clang::DeclGroupRef GroupRef) override;
     virtual void HandleTagDeclDefinition(clang::TagDecl* D) override;
-	virtual void HandleTranslationUnit(clang::ASTContext& Ctx) override {
-		// all parsed, output
-    }
+	virtual void HandleTranslationUnit(clang::ASTContext& Ctx) override;
 
-private:
+public:
 	void ParseClass(clang::CXXRecordDecl *RD, bool uplevelExport);
 	void ParseEnum(clang::EnumDecl *ED, bool uplevelExport);
 
