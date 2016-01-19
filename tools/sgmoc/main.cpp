@@ -405,15 +405,21 @@ bool Moc(const std::string arg0, const std::string &inputFilePath, const std::st
 	//Argv.push_back("-Wall");
 	//Argv.push_back("-Wmicrosoft-include");
 	Argv.push_back("-ID:\\projects\\llvm\\tools\\clang\\tools\\sgmoc\\aa");
+	Argv.push_back("-ID:\\projects\\llvm\\tools\\clang\\tools\\sgmoc");
 	Argv.push_back("-std=c++11");
 	Argv.push_back("-fsyntax-only"); 
 
+	std::cout << "\n\n\n=========================start" << inputFilePath;
 	std::string outfile = outputDir + "gen_" + GetFileName(inputFilePath) + ".cpp";
 	MocAction *action = new MocAction(outfile);
-	clang::tooling::ToolInvocation Inv(Argv, action, Files.get());
+
+	static std::shared_ptr<clang::PCHContainerOperations> PCHContainerOps = std::make_shared<clang::PCHContainerOperations>();
+	clang::tooling::ToolInvocation Inv(Argv, action, Files.get(), PCHContainerOps);
 	//Inv.mapVirtualFile(f->filename, {f->content , f->size } );
 
-	bool ret = !Inv.run();
+	bool ret = Inv.run();
+
+	std::cout << "\n=========================end" << inputFilePath;
 
 	return ret;
 }
