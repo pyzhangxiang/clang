@@ -33,7 +33,8 @@ std::string GetFileName(const std::string& path);
 std::string GetFileExtension(const std::string& path);
 std::string ReplaceString(const std::string src, const std::string &oldstr, const std::string &newstr);
 std::string Md5File(const std::string filename);
-bool Moc(const std::string arg0, const std::string &inputFilePath, const std::string &outputDir);
+bool Moc(const std::string arg0, const std::string &outputDir, const std::vector<std::string> &inputFiles
+	, const std::vector<std::string> &includeDirs);
 
 class MocAction : public clang::ASTFrontendAction {
 
@@ -78,7 +79,7 @@ protected:
 
 		std::cout << "\n\n\nParsing End";
 
-		std::ofstream out(mOutputFilePath.c_str());
+		std::ofstream out("D:\\projects\\llvm\\build\\Debug\\bin\\aa.txt");
 		if (out.fail())
 		{
 			return;
@@ -185,6 +186,10 @@ int main(int argc, const char **argv)
 		return 1;
 	}
 
+	std::vector<std::string> includePathes;
+	std::vector<std::string> inFiles;
+	std::string outDir;
+
 	int outdirIndex = 1;
 	int infileIndex = 2;
 	bool forceMoc = false;
@@ -198,6 +203,18 @@ int main(int argc, const char **argv)
 				outdirIndex = 2;
 				infileIndex = 3;
 			}
+			else if (argv[i][1] == 'I')
+			{
+				includePathes.push_back(argv[i]);
+			}
+			else if (strcmp(argv[i], "-od") == 0)
+			{
+				outDir = argv[++i];
+			}
+		}
+		else
+		{
+			inFiles.push_back(argv[i]);
 		}
 	}
 
@@ -208,7 +225,6 @@ int main(int argc, const char **argv)
 	}
 
 	std::cout << "\n============================= Start SG Moc =====================";
-	std::string outDir = argv[outdirIndex];
 	if (outDir[outDir.size() - 1] != '/' || outDir[outDir.size() - 1] != '\\')
 	{
 		outDir += "/";
@@ -228,15 +244,9 @@ int main(int argc, const char **argv)
 		}
 	}
 
-	std::vector<std::string> inFiles;
-	inFiles.reserve(argc - infileIndex);
-	for (int i = infileIndex; i < argc; ++i)
-	{
-		inFiles.push_back(argv[i]);
-		//std::cout << " " << argv[i];
-	}
 	std::cout << "\n";
 
+	std::vector<std::string> needMocFiles;
 	for (size_t i = 0; i < inFiles.size(); ++i)
 	{
 		std::string &filepath = inFiles[i];
@@ -259,13 +269,14 @@ int main(int argc, const char **argv)
 			}
 
 			mHeaderMd5[filepath] = newmd5;
+
+			
 		}
-		
 
-		Moc(argv[0], filepath, outDir);
-		
-
+		needMocFiles.push_back(filepath);
 	}
+
+	Moc(argv[0], outDir, needMocFiles, includePathes);
 
 	if (!forceMoc)
 	{
@@ -381,7 +392,9 @@ std::string Md5File(const std::string filepath)
 
 }
 
-bool Moc(const std::string arg0, const std::string &inputFilePath, const std::string &outputDir)
+bool Moc(const std::string arg0, const std::string &outputDir
+	, const std::vector<std::string> &inputFiles
+	, const std::vector<std::string> &includeDirs)
 {
 	std::vector<std::string> Argv;
 	Argv.push_back(arg0);
@@ -397,23 +410,42 @@ bool Moc(const std::string arg0, const std::string &inputFilePath, const std::st
 	llvm::IntrusiveRefCntPtr<clang::FileManager> Files(
 		new clang::FileManager(clang::FileSystemOptions()));
 
-	Argv.push_back(inputFilePath);
-
-	Argv.push_back("-x");  // Type need to go first
-	Argv.push_back("c++");
+	for (const std::string &inputefile : inputFiles)
+	{
+		Argv.push_back(inputefile);
+	}
+	//Argv.push_back(inputFilePath);
+	//Argv.push_back("D:\\projects\\llvm\\tools\\clang\\tools\\sgmoc\\sgMetaDef.h");
+	Argv.push_back("--");
+	//Argv.push_back("-x");  // Type need to go first
+	//Argv.push_back("-c++");
 	Argv.push_back("-fms-compatibility-version=19");
-	//Argv.push_back("-Wall");
-	//Argv.push_back("-Wmicrosoft-include");
-	Argv.push_back("-ID:\\projects\\llvm\\tools\\clang\\tools\\sgmoc\\aa");
+	Argv.push_back("-Wall");
+	Argv.push_back("-Wmicrosoft-include");
+	for (const std::string &includeD : includeDirs)
+	{
+		Argv.push_back(includeD);
+	}
+	//Argv.push_back("-ID:\\projects\\llvm\\tools\\clang\\tools\\sgmoc\\aa");
 	Argv.push_back("-std=c++11");
-	Argv.push_back("-fsyntax-only"); 
+	//Argv.push_back("-fsyntax-only");
 
-	std::string outfile = outputDir + "gen_" + GetFileName(inputFilePath) + ".cpp";
-	MocAction *action = new MocAction(outfile);
-	clang::tooling::ToolInvocation Inv(Argv, action, Files.get());
+	std::string outfile = "";// outputDir + "gen_" + GetFileName(inputFilePath) + ".cpp";
+	//MocAction *action = new MocAction(outfile);
+	//clang::tooling::ToolInvocation Inv(Argv, action, Files.get());
 	//Inv.mapVirtualFile(f->filename, {f->content , f->size } );
 
-	bool ret = !Inv.run();
+	//bool ret = !Inv.run();
+
+	std::vector<const char*> args;
+	for (const std::string &Str : Argv)
+		args.push_back(Str.c_str());
+
+	llvm::cl::OptionCategory MyToolCategory("My tool options");
+	int argc = (int)args.size();
+	clang::tooling::CommonOptionsParser op(argc, args.data(), MyToolCategory);
+	clang::tooling::ClangTool tool(op.getCompilations(), op.getSourcePathList());
+	bool ret = tool.run(new MocFrontendActionFactory(outfile));
 
 	return ret;
 }
