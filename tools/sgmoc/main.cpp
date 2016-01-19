@@ -49,6 +49,7 @@ protected:
     virtual std::unique_ptr<clang::ASTConsumer> CreateASTConsumer(clang::CompilerInstance &CI,
                                            llvm::StringRef InFile) override {
 
+		std::cout << "\n\n\n=============start " << InFile.str();
         CI.getFrontendOpts().SkipFunctionBodies = true;
         CI.getPreprocessor().enableIncrementalProcessing(true);
         CI.getPreprocessor().SetSuppressIncludeNotFoundError(true);
@@ -74,6 +75,7 @@ protected:
 
 	virtual void EndSourceFileAction()
 	{
+		std::cout << "\n=============end";
 		//clang::CompilerInstance &CI = getCompilerInstance();
 		//clang::ASTConsumer &consumer = CI.getASTConsumer();
 
@@ -419,15 +421,18 @@ bool Moc(const std::string arg0, const std::string &outputDir
 	Argv.push_back("--");
 	//Argv.push_back("-x");  // Type need to go first
 	//Argv.push_back("-c++");
+	Argv.push_back("/TP");
 	Argv.push_back("-fms-compatibility-version=19");
 	Argv.push_back("-Wall");
 	Argv.push_back("-Wmicrosoft-include");
 	for (const std::string &includeD : includeDirs)
 	{
-		Argv.push_back(includeD);
+		//Argv.push_back(includeD);
 	}
-	//Argv.push_back("-ID:\\projects\\llvm\\tools\\clang\\tools\\sgmoc\\aa");
+	Argv.push_back("-ID:\\projects\\llvm\\tools\\clang\\tools\\sgmoc\\aa");
+	Argv.push_back("-ID:\\projects\\llvm\\tools\\clang\\tools\\sgmoc");
 	Argv.push_back("-std=c++11");
+	Argv.push_back("/Zs");
 	//Argv.push_back("-fsyntax-only");
 
 	std::string outfile = "";// outputDir + "gen_" + GetFileName(inputFilePath) + ".cpp";
