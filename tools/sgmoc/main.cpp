@@ -23,6 +23,7 @@
 #include <map>
 #include <iostream>
 #include <fstream>
+#include <sstream>
 
 #include "sgASTConsumer.h"
 #include <llvm/Support/MD5.h>
@@ -34,6 +35,7 @@ std::string GetFileExtension(const std::string& path);
 std::string ReplaceString(const std::string src, const std::string &oldstr, const std::string &newstr);
 std::string ReplaceChar(const std::string src, char oldc, char newc);
 std::string Md5File(const std::string filename);
+std::string GetFileLastModifyTime(const std::string filepath);
 const char* GetRelativeFilename(const std::string &dir, const std::string &filepath);
 
 bool Moc(const std::string arg0, const std::string &outputDir
@@ -85,9 +87,7 @@ protected:
 		//clang::CompilerInstance &CI = getCompilerInstance();
 		//clang::ASTConsumer &consumer = CI.getASTConsumer();
 
-		std::cout << "\n\n\nParsing End";
-
-		std::string outfile = mOutputDir + "gen_" + GetFileName(mInputFilePath) + ".cpp";
+		std::string outfile = mOutputDir + "meta_" + GetFileName(mInputFilePath) + ".cpp";
 		std::ofstream out(outfile.c_str());
 		if (out.fail())
 		{
@@ -96,10 +96,8 @@ protected:
 
 		out << "#include \"" << GetRelativeFilename(mOutputDir, mInputFilePath) << "\"\n";
 
-		std::cout << "\n\n\nEnums:";
 		for (size_t i = 0; i < mComsumerPtr->mExportEnums.size(); ++i)
 		{
-			std::cout << "\n\n===========================";
 			const EnumDef &def = mComsumerPtr->mExportEnums[i];
 			
 			std::string metaname = ReplaceString(def.name, "::", "__");
@@ -114,10 +112,8 @@ protected:
 			out << "\n" << "SG_META_DEF_END";
 		}
 
-		std::cout << "\n\n\nClasses:";
 		for (size_t i = 0; i < mComsumerPtr->mExportClasses.size(); ++i)
 		{
-			std::cout << "\n\n===========================";
 			const ClassDef &def = mComsumerPtr->mExportClasses[i];
 
 			std::string metaBegin;
@@ -136,14 +132,9 @@ protected:
 			std::string metaname = ReplaceString(def.typeName, "::", "__");
 			out << "\n\n" << metaBegin << "(" << metaname << ", " << def.typeName << ", " << def.baseClassTypeName << ")";
 
-			std::cout << "\nName: " << def.name;
-			std::cout << "\nType Name: " << def.typeName;
-			std::cout << "\nBase Name: " << def.baseClassTypeName;
-			std::cout << "\nProperty:";
 			for (int ip = 0; ip < def.properties.size(); ++ip)
 			{
 				const PropertyDef &pdef = def.properties[ip];
-				std::cout << "\n\t" << pdef.name << " [" << pdef.typeName << "]";
 				if (pdef.isEnum)
 				{
 					out << "\n\t" << "SG_ENUM_PROPERTY_DEF(" << pdef.name << ", " << pdef.typeName << ")";
@@ -157,9 +148,6 @@ protected:
 					out << "\n\t" << "SG_PROPERTY_DEF(" << pdef.name << ")";
 				}
 
-				if (pdef.isPointer) std::cout << " <pointer>";
-				if (pdef.isEnum) std::cout << " <enum>";
-				if (pdef.isArray) std::cout << " <array>";
 			}
 
 			out << "\n" << "SG_META_DEF_END";
@@ -188,14 +176,12 @@ public:
 
 
 
-
+#define SOURCES_MD5_FILE "src_info.txt"
 int main(int argc, const char **argv) 
 {
-	
-
 	if (argc < 3)
 	{
-		std::cout << "Usage is [-force] <outdir> <infiles> ...\n";
+		std::cout << "Usage is [-force] <-OOutputDir> [-IIncludeDir] <InputFile [InputFile [...]]> \n";
 		return 1;
 	}
 
@@ -203,8 +189,6 @@ int main(int argc, const char **argv)
 	std::vector<std::string> inFiles;
 	std::string outDir;
 
-	int outdirIndex = 1;
-	int infileIndex = 2;
 	bool forceMoc = false;
 	for (int i = 1; i < argc; ++i)
 	{
@@ -213,28 +197,20 @@ int main(int argc, const char **argv)
 			if (strcmp(argv[i], "-force") == 0)
 			{
 				forceMoc = true;
-				outdirIndex = 2;
-				infileIndex = 3;
 			}
 			else if (argv[i][1] == 'I')
 			{
 				includePathes.push_back(argv[i]);
 			}
-			else if (strcmp(argv[i], "-od") == 0)
+			else if (argv[i][1] == 'O')
 			{
-				outDir = argv[++i];
+				outDir = &(argv[i][2]);
 			}
 		}
 		else
 		{
 			inFiles.push_back(argv[i]);
 		}
-	}
-
-	if (forceMoc && argc < 4)
-	{
-		std::cout << "Usage is [-force] <outdir> <infiles> ...\n";
-		return 1;
 	}
 
 	std::cout << "\n============================= Start SG Moc =====================";
@@ -246,7 +222,7 @@ int main(int argc, const char **argv)
 
 	// get headers' md5    
 	std::map<std::string, std::string> mHeaderMd5;
-	std::string md5file = outDir + "md5.txt";
+	std::string md5file = outDir + SOURCES_MD5_FILE;
 	std::ifstream md5In(md5file.c_str());
 	if (!md5In.fail())
 	{
@@ -257,8 +233,6 @@ int main(int argc, const char **argv)
 		}
 	}
 
-	std::cout << "\n";
-
 	std::vector<std::string> needMocFiles;
 	for (size_t i = 0; i < inFiles.size(); ++i)
 	{
@@ -266,18 +240,15 @@ int main(int argc, const char **argv)
 
 		if (!forceMoc)
 		{
-			std::string newmd5 = Md5File(filepath);
+			std::string newmd5 = GetFileLastModifyTime(filepath);
 			if (newmd5.empty())
 			{
-				std::cout << "\n";
 				continue;
 			}
 
-			std::string oldmd5;
 			auto it = mHeaderMd5.find(filepath);
 			if (it != mHeaderMd5.end() && it->second == newmd5)
 			{
-				//std::cout << "\n no need to generate: " << filepath;
 				continue;
 			}
 
@@ -287,7 +258,17 @@ int main(int argc, const char **argv)
 		needMocFiles.push_back(filepath);
 	}
 
-	Moc(argv[0], outDir, needMocFiles, includePathes);
+	std::cout << "\nSG Moc Start ...";
+	std::cout << "\nOut Dir: " << outDir;
+	if (needMocFiles.empty())
+	{
+		std::cout << "\nNothing to Moc";
+	}
+	else
+	{
+		Moc(argv[0], outDir, needMocFiles, includePathes);
+	}
+	std::cout << "\nSG Moc End";
 
 	if (!forceMoc)
 	{
@@ -385,30 +366,51 @@ std::string GetFileName(const std::string& path)
 
 std::string Md5File(const std::string filepath)
 {
-	std::ifstream fileIn(filepath.c_str());
-	if (fileIn.fail())
+	FILE *file = fopen(filepath.c_str(), "rb");
+	if (file == NULL)
+	{
 		return "";
+	}
 
-	fileIn.seekg(0, fileIn.end);
-	int length = fileIn.tellg();
-	fileIn.seekg(0, fileIn.beg);
-
-	char *buffer = new char[length];
-	fileIn.read(buffer, length);
-
-	llvm::StringRef md5Input(buffer);
-
+	unsigned char buffer[1024];
+	int len = 0;
 	llvm::MD5 Hash;
-	Hash.update(md5Input);
+	while (0 != (len = fread(buffer, 1, 1024, file)))
+	{
+		Hash.update(buffer);
+	}
 	llvm::MD5::MD5Result MD5Res;
 	Hash.final(MD5Res);
 	llvm::SmallString<32> Res;
 	llvm::MD5::stringifyResult(MD5Res, Res);
 
-	delete []buffer;
-
 	return std::string(Res.c_str());
 
+}
+
+std::string GetFileLastModifyTime(const std::string filepath)
+{
+	int fileID;
+	if (auto EC = llvm::sys::fs::openFileForRead(filepath, fileID))
+	{
+		return "";
+	}
+	if (fileID == -1)
+	{
+		return "";
+	}
+
+	llvm::sys::fs::file_status st;
+	if (auto EC = llvm::sys::fs::status(fileID, st))
+	{
+		return "";
+	}
+		
+	llvm::sys::TimeValue tv = st.getLastModificationTime();
+
+	std::stringstream ss;
+	ss << tv.seconds() << "." << tv.nanoseconds();
+	return ss.str();
 }
 
 bool Moc(const std::string arg0, const std::string &outputDir
@@ -449,7 +451,7 @@ bool Moc(const std::string arg0, const std::string &outputDir
 		args.insert(args.end(), Argv.begin(), Argv.end());
 		args.push_back(inputFilePath);
 
-		std::cout << "\n\n\n=========================start" << inputFilePath;
+		std::cout << "\nsgmoc " << inputFilePath;
 		
 		MocAction *action = new MocAction(outputDir, inputFilePath);
 
@@ -458,7 +460,7 @@ bool Moc(const std::string arg0, const std::string &outputDir
 
 		bool ret = Inv.run();
 
-		std::cout << "\n=========================end" << inputFilePath;
+		//std::cout << "\n=========================end" << inputFilePath;
 	}
 
 	return true;

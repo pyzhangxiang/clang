@@ -98,17 +98,11 @@ void sgASTConsumer::ParseClass(clang::CXXRecordDecl *RD, bool uplevelExport)
 		return;
 	}
 
-	clang::Preprocessor &PP = mCompilerInstance.getPreprocessor();
-    
-
-	std::string name = RD->getNameAsString();
-
-	name = RD->getTypeForDecl()->getCanonicalTypeInternal().getAsString();// getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
+	std::string name = RD->getQualifiedNameAsString();// RD->getTypeForDecl()->getCanonicalTypeInternal().getAsString();// getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
 	//clang::ASTContext ct(;
 	//RD->viewInheritance(ct);
 	
 	clang::Decl::Kind classKind = RD->getKind();
-	std::cout << "\nParsing Class: " << name << " kind " << classKind;
 
 	if (classKind != clang::Decl::CXXRecord)
 	{
@@ -132,9 +126,12 @@ void sgASTConsumer::ParseClass(clang::CXXRecordDecl *RD, bool uplevelExport)
 		if(firstBase != RD->bases_end())
 		{
 			Def.baseClassTypeName = GetTypeName(firstBase->getType().getAsString());
-
-			std::cout << "\n\tBase class: " << Def.baseClassTypeName;
 		}
+	}
+
+	if (Def.baseClassTypeName.empty())
+	{
+		Def.baseClassTypeName = "0";
 	}
 
     for (auto it = RD->decls_begin(); it != RD->decls_end(); ++it) {
@@ -155,20 +152,16 @@ void sgASTConsumer::ParseClass(clang::CXXRecordDecl *RD, bool uplevelExport)
 				{
 					Def.mt = MT_OBJ;
 					localToExport = true;
-					
-					std::cout << "\n\tsg_meta_object";
                 }
 				else if (key == "sg_meta_object_abstract")
 				{
 					Def.mt = MT_OBJ_ABSTRACT;
 					localToExport = true;
-					std::cout << "\n\tsg_meta_object_abstract";
 				}
 				else if (key == "sg_meta_other")
 				{
 					Def.mt = MT_OTHER;
 					localToExport = true;
-					std::cout << "\n\tsg_meta_other";
 				}
             }
         } 
@@ -184,35 +177,27 @@ void sgASTConsumer::ParseClass(clang::CXXRecordDecl *RD, bool uplevelExport)
 			std::string fieldName = fd->getNameAsString();
 			clang::QualType fieldType = fd->getType();
 			std::string typeName = fieldType.getAsString();
-			std::string typeClassName = fieldType->getTypeClassName();
 
 			pd.name = fieldName;
 			pd.typeName = GetTypeName(typeName);
 
-			std::cout << "\n\tParsing Field: " << typeName << " " << fieldName;
 			if(fieldType->isEnumeralType())
 			{
 				pd.isEnum = true;
-				std::cout << "\n\t\tis Enum";
 			}
 			if(fieldType->isPointerType())
 			{
 				pd.isPointer = true;
-				std::cout << "\n\t\tis Pointer";
 			}
 			if(fieldType->isArrayType())
 			{
 				pd.isArray = true;
-
-				std::cout << "\n\t\tis Array";
 			}
 			if(fieldType->isBuiltinType())
 			{
-				std::cout << "\n\t\tis Buildin";
 			}
 			if(fieldType->isBooleanType())
 			{
-				std::cout << "\n\t\tis Boolean";
 			}
 
 			bool toExport = true;
@@ -224,7 +209,6 @@ void sgASTConsumer::ParseClass(clang::CXXRecordDecl *RD, bool uplevelExport)
 				if(annotation == "sg_meta_no_export")
 				{
 					toExport = false;
-					std::cout << "\n\t\tno export";
 					break;
 				}
 			}
@@ -234,23 +218,21 @@ void sgASTConsumer::ParseClass(clang::CXXRecordDecl *RD, bool uplevelExport)
 				Def.properties.push_back(pd);
 			}
 		}
-		else if (clang::CXXMethodDecl *M = llvm::dyn_cast<clang::CXXMethodDecl>(*it))
-		{
-			std::string name = M->getNameAsString();
-			std::string retType = M->getReturnType().getAsString();
-			std::cout << "\n\tParsing Method: " << retType << " " << name;
-            for (auto attr_it = M->specific_attr_begin<clang::AnnotateAttr>();
-                attr_it != M->specific_attr_end<clang::AnnotateAttr>();
-                ++attr_it) 
-			{
-                llvm::StringRef annotation = attr_it->getAnnotation();
-				if(annotation == "sg_meta_no_export")
-				{
-					std::cout << "\n\t\tno export";
-					break;
-				}
-            }
-        }
+// 		else if (clang::CXXMethodDecl *M = llvm::dyn_cast<clang::CXXMethodDecl>(*it))
+// 		{
+// 			std::string name = M->getNameAsString();
+// 			std::string retType = M->getReturnType().getAsString();
+//             for (auto attr_it = M->specific_attr_begin<clang::AnnotateAttr>();
+//                 attr_it != M->specific_attr_end<clang::AnnotateAttr>();
+//                 ++attr_it) 
+// 			{
+//                 llvm::StringRef annotation = attr_it->getAnnotation();
+// 				if(annotation == "sg_meta_no_export")
+// 				{
+// 					break;
+// 				}
+//             }
+//         }
 		else if(clang::EnumDecl *ED = llvm::dyn_cast<clang::EnumDecl>(*it))
 		{
 			ParseEnum(ED, localToExport);
@@ -268,9 +250,7 @@ void sgASTConsumer::ParseEnum(clang::EnumDecl *ED, bool uplevelExport)
 	EnumDef def;
 	def.enumDecl = ED;
 
-	std::string enumName = ED->getNameAsString();
-	def.name = enumName;
-	std::cout << "\nParsing Enum: " << enumName;
+	def.name = ED->getQualifiedNameAsString();
 
 	bool localToExport = false;
 	for (auto attr_it = ED->specific_attr_begin<clang::AnnotateAttr>();
@@ -280,13 +260,11 @@ void sgASTConsumer::ParseEnum(clang::EnumDecl *ED, bool uplevelExport)
 		llvm::StringRef annotation = attr_it->getAnnotation();
 		if (annotation == "sg_meta_enum")
 		{
-			std::cout << "\n\tsg_meta_enum";
 			localToExport = true;
 			break;
 		}
 		else if (annotation == "sg_meta_no_export")
 		{
-			std::cout << "\n\t\tno export";
 			localToExport = false;
 			break;
 		}
@@ -296,12 +274,9 @@ void sgASTConsumer::ParseEnum(clang::EnumDecl *ED, bool uplevelExport)
 	for (auto it = range.begin(); it != range.end(); ++it)
 	{
 		EnumValueDef pd;
-		std::string name = it->getNameAsString();
-		pd.name = name;
+		pd.name = it->getQualifiedNameAsString();
 		pd.value = *(it->getInitVal().getRawData());
 		def.values.push_back(pd);
-
-		std::cout << "\n\tEnumConstant: " << name << " " << *(it->getInitVal().getRawData());
 	}
 
 	if (uplevelExport || localToExport)
@@ -314,43 +289,40 @@ void sgASTConsumer::ParseEnum(clang::EnumDecl *ED, bool uplevelExport)
 void sgASTConsumer::TopLevelParseDecl(clang::Decl *decl)
 {
 	
-	if (clang::FunctionDecl *MD = llvm::dyn_cast<clang::FunctionDecl>(decl))
-	{
-		// global function
-		std::string funcName = MD->getNameAsString();
-		std::string retType = MD->getReturnType().getAsString();
-		std::cout << "\nParsing Function: " << retType << " " << funcName;
-
-		bool toExport = true;
-		for (auto attr_it = MD->specific_attr_begin<clang::AnnotateAttr>();
-		attr_it != MD->specific_attr_end<clang::AnnotateAttr>();
-			++attr_it)
-		{
-			llvm::StringRef annotation = attr_it->getAnnotation();
-			if (annotation == "sg_meta_no_export")
-			{
-				std::cout << "\n\tno export";
-				toExport = false;
-				break;
-			}
-		}
-
-		if (toExport)
-		{
-			mExportFunctions.push_back(MD);
-		}
-	}
-	else if (clang::EnumDecl *ED = llvm::dyn_cast<clang::EnumDecl>(decl))
+	if (clang::EnumDecl *ED = llvm::dyn_cast<clang::EnumDecl>(decl))
 	{
 		ParseEnum(ED, false);
 	}
+// 	else if (clang::FunctionDecl *MD = llvm::dyn_cast<clang::FunctionDecl>(decl))
+// 	{
+// 		// global function
+// 		std::string funcName = MD->getNameAsString();
+// 		std::string retType = MD->getReturnType().getAsString();
+// 
+// 		bool toExport = true;
+// 		for (auto attr_it = MD->specific_attr_begin<clang::AnnotateAttr>();
+// 		attr_it != MD->specific_attr_end<clang::AnnotateAttr>();
+// 			++attr_it)
+// 		{
+// 			llvm::StringRef annotation = attr_it->getAnnotation();
+// 			if (annotation == "sg_meta_no_export")
+// 			{
+// 				toExport = false;
+// 				break;
+// 			}
+// 		}
+// 
+// 		if (toExport)
+// 		{
+// 			mExportFunctions.push_back(MD);
+// 		}
+// 	}
 	else if (clang::CXXRecordDecl *RD = llvm::dyn_cast<clang::CXXRecordDecl>(decl))
 	{
 		ParseClass(RD, false);
 	}
 	else if (clang::NamespaceDecl *ND = llvm::dyn_cast<clang::NamespaceDecl>(decl))
 	{
-		std::cout << "\nParse Namespace " << ND->getNameAsString();
 		for (auto it = ND->decls_begin(); it != ND->decls_end(); ++it)
 		{
 			TopLevelParseDecl(*it);
