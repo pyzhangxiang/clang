@@ -1,6 +1,7 @@
 
 #include "sgPPCallbacks.h"
 #include "sgmetadefs-injected.h"
+#include <clang\Lex\MacroArgs.h>
 
 clang::FileID CreateFileIDForMemBuffer(clang::Preprocessor &PP, std::unique_ptr<llvm::MemoryBuffer> Buf, clang::SourceLocation Loc)
 {
@@ -46,6 +47,55 @@ void sgPPCallbacks::FileChanged(clang::SourceLocation Loc, clang::PPCallbacks::F
     if (name.endswith("sgClassMetaDef.h")) {
         InjectQObjectDefs(Loc);
     }
+}
+
+void sgPPCallbacks::MacroExpands(const clang::Token &MacroNameTok, const clang::MacroDefinition &MD, clang::SourceRange Range, const clang::MacroArgs *Args)
+{
+	if (!mIsInMainFile)
+	{
+		return;
+	}
+
+	clang::tok::TokenKind kid = MacroNameTok.getKind();
+	if (kid != clang::tok::identifier)
+	{
+		return;
+	}
+
+	clang::IdentifierInfo *tokInfo = MacroNameTok.getIdentifierInfo();
+	if (tokInfo && tokInfo->getName() == "metainclude" && Args && Args->getNumArguments() > 0)
+	{
+		const clang::Token *tok = Args->getUnexpArgument(0);
+		if (!tok)
+		{
+			return;
+		}
+
+		clang::tok::TokenKind argKind = tok->getKind();
+		if (argKind != clang::tok::string_literal)
+		{
+			return;
+		}
+		const char *str = tok->getLiteralData();
+		if (!str)
+		{
+			return;
+		}
+
+		if (tok->getLength() < 3)
+		{
+			return;
+		}
+
+		char incpath[256];
+		memset(incpath, 0, 256);
+		strncpy(incpath, str, tok->getLength());
+		
+		incpath[tok->getLength() - 1] = '\0';
+
+		mMetaIncludes.push_back(&(incpath[1]));
+
+	}
 }
 
 

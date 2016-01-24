@@ -15,15 +15,15 @@
 
 std::string GetTypeName(const std::string fullTypeName)
 {
-	if (fullTypeName.find_first_of("class ") == 0)
+	if (fullTypeName.find("class ") == 0)
 	{
 		return fullTypeName.substr(6);
 	}
-	else if (fullTypeName.find_first_of("struct ") == 0)
+	else if (fullTypeName.find("struct ") == 0)
 	{
 		return fullTypeName.substr(7);
 	}
-	else if (fullTypeName.find_first_of("enum ") == 0)
+	else if (fullTypeName.find("enum ") == 0)
 	{
 		return fullTypeName.substr(5);
 	}
@@ -53,6 +53,9 @@ bool sgASTConsumer::HandleTopLevelDecl(clang::DeclGroupRef GroupRef)
 	}
 
 	TopLevelParseDecl(decl);
+
+	
+		
 		
 	return true;
 }
@@ -91,18 +94,27 @@ void sgASTConsumer::HandleTagDeclDefinition(clang::TagDecl* D)
 
 }
 
-void sgASTConsumer::ParseClass(clang::CXXRecordDecl *RD, bool uplevelExport)
+void sgASTConsumer::ParseClass(clang::CXXRecordDecl *RD)
 {
-	if (!RD->isCompleteDefinition())
+	clang::AccessSpecifier as = RD->getAccess();
+	if (as == clang::AS_private || as == clang::AS_protected)
 	{
 		return;
 	}
+
+//	const clang::comments::FullComment *Comment =
+//		RD->getASTContext().getLocalCommentForDeclUncached(RD);
 
 	std::string name = RD->getQualifiedNameAsString();// RD->getTypeForDecl()->getCanonicalTypeInternal().getAsString();// getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
 	//clang::ASTContext ct(;
 	//RD->viewInheritance(ct);
 	
 	clang::Decl::Kind classKind = RD->getKind();
+
+	if (!RD->isCompleteDefinition())
+	{
+		return;
+	}
 
 	if (classKind != clang::Decl::CXXRecord)
 	{
@@ -168,7 +180,7 @@ void sgASTConsumer::ParseClass(clang::CXXRecordDecl *RD, bool uplevelExport)
 		else if (clang::CXXRecordDecl *rd = llvm::dyn_cast<clang::CXXRecordDecl>(*it))
 		{
 			if(rd != RD)
-				ParseClass(rd, localToExport);
+				ParseClass(rd);
 		}
 		else if(clang::FieldDecl *fd = llvm::dyn_cast<clang::FieldDecl>(*it))
 		{
@@ -200,15 +212,15 @@ void sgASTConsumer::ParseClass(clang::CXXRecordDecl *RD, bool uplevelExport)
 			{
 			}
 
-			bool toExport = true;
+			bool toExport = false;
 			for(auto attrIt = fd->specific_attr_begin<clang::AnnotateAttr>();
 				attrIt != fd->specific_attr_end<clang::AnnotateAttr>();
 				++attrIt)
 			{
 				llvm::StringRef annotation = attrIt->getAnnotation();
-				if(annotation == "sg_meta_no_export")
+				if(annotation == "sg_meta_export")
 				{
-					toExport = false;
+					toExport = true;
 					break;
 				}
 			}
@@ -235,18 +247,24 @@ void sgASTConsumer::ParseClass(clang::CXXRecordDecl *RD, bool uplevelExport)
 //         }
 		else if(clang::EnumDecl *ED = llvm::dyn_cast<clang::EnumDecl>(*it))
 		{
-			ParseEnum(ED, localToExport);
+			ParseEnum(ED);
 		}
     }
 
-	if (uplevelExport || localToExport)
+	if (localToExport)
 	{
 		mExportClasses.push_back(Def);
 	}
 }
 
-void sgASTConsumer::ParseEnum(clang::EnumDecl *ED, bool uplevelExport)
+void sgASTConsumer::ParseEnum(clang::EnumDecl *ED)
 {
+	clang::AccessSpecifier as = ED->getAccess();
+	if (as == clang::AS_private || as == clang::AS_protected)
+	{
+		return;
+	}
+
 	EnumDef def;
 	def.enumDecl = ED;
 
@@ -279,7 +297,7 @@ void sgASTConsumer::ParseEnum(clang::EnumDecl *ED, bool uplevelExport)
 		def.values.push_back(pd);
 	}
 
-	if (uplevelExport || localToExport)
+	if (localToExport)
 	{
 		mExportEnums.push_back(def);
 	}
@@ -291,7 +309,7 @@ void sgASTConsumer::TopLevelParseDecl(clang::Decl *decl)
 	
 	if (clang::EnumDecl *ED = llvm::dyn_cast<clang::EnumDecl>(decl))
 	{
-		ParseEnum(ED, false);
+		ParseEnum(ED);
 	}
 // 	else if (clang::FunctionDecl *MD = llvm::dyn_cast<clang::FunctionDecl>(decl))
 // 	{
@@ -319,7 +337,7 @@ void sgASTConsumer::TopLevelParseDecl(clang::Decl *decl)
 // 	}
 	else if (clang::CXXRecordDecl *RD = llvm::dyn_cast<clang::CXXRecordDecl>(decl))
 	{
-		ParseClass(RD, false);
+		ParseClass(RD);
 	}
 	else if (clang::NamespaceDecl *ND = llvm::dyn_cast<clang::NamespaceDecl>(decl))
 	{

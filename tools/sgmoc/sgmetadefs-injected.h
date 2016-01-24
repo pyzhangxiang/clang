@@ -16,6 +16,6 @@ static const char Injected[] = "\
 							   #undef  SG_META_ENUM \n \
 							   #define SG_META_ENUM __attribute__((annotate(\"sg_meta_enum\")))	\n \
 							   \
-							   #undef  SG_META_NO_EXPORT \n \
-							   #define SG_META_NO_EXPORT __attribute__((annotate(\"sg_meta_no_export\")))		\
+							   #undef  SG_META_EXPORT \n \
+							   #define SG_META_EXPORT __attribute__((annotate(\"sg_meta_export\")))		\
 ";

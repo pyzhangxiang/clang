@@ -26,17 +26,180 @@
 #include <sstream>
 
 #include "sgASTConsumer.h"
+#include "sgPPCallbacks.h"
 #include <llvm/Support/MD5.h>
 #include <clang/Tooling/CommonOptionsParser.h>
 
 
+class StrTokenizer
+{
+public:
+	// ctor/dtor
+	StrTokenizer();
+	StrTokenizer(const std::string& str, const std::string& delimiter);
+	~StrTokenizer();
+
+	// Set string and delimiter
+	void Set(const std::string& str, const std::string& delimiter);
+	void SetString(const std::string& str);             // Set source string only
+	void SetDelimiter(const std::string& delimiter);    // Set delimiter string only
+
+	bool IsEnd() const;
+	void Reset();
+	void Join(std::string& str, const std::string& separator);
+	bool Next(std::string& str);
+	void GetSubStr(std::vector<std::string>& subStr);
+
+private:
+	void SkipDelimiter();                               // ignore leading delimiters
+	bool IsDelimiter(char c);                           // check if the current char is delimiter
+
+	std::string mBuffer;                                 // input string
+	std::string mToken;                                  // output string
+	std::string mDelimiter;                              // delimiter string
+	std::string::iterator mCurrPos;                // string iterator pointing the current position
+};
+
+/*
+*	string tokenizer
+*/
+
+StrTokenizer::StrTokenizer() : mBuffer(""), mToken(""), mDelimiter(" ")
+{
+	mCurrPos = mBuffer.begin();
+}
+
+StrTokenizer::StrTokenizer(const std::string& str, const std::string& delimiter) : mBuffer(str), mToken(""), mDelimiter(delimiter)
+{
+	mCurrPos = mBuffer.begin();
+}
+
+StrTokenizer::~StrTokenizer()
+{
+}
+
+void StrTokenizer::Set(const std::string& str, const std::string& delimiter)
+{
+	mBuffer = str;
+	mDelimiter = delimiter;
+	mCurrPos = mBuffer.begin();
+}
+
+void StrTokenizer::SetString(const std::string& str)
+{
+	mBuffer = str;
+	mCurrPos = mBuffer.begin();
+}
+
+void StrTokenizer::SetDelimiter(const std::string& delimiter)
+{
+	mDelimiter = delimiter;
+	mCurrPos = mBuffer.begin();
+}
+
+bool StrTokenizer::Next(std::string& str)
+{
+	if (IsEnd())
+		return false;
+
+	mToken.clear();                       // reset token string
+
+	SkipDelimiter();                      // skip leading delimiters
+
+										  // append each char to token string until it meets delimiter
+	int beginIdx = mCurrPos - mBuffer.begin(), len = 0;
+	while (mCurrPos != mBuffer.end() && !IsDelimiter(*mCurrPos))
+	{
+		++mCurrPos;
+		++len;
+	}
+
+	mToken = mBuffer.substr(beginIdx, len);
+	str = mToken;
+	SkipDelimiter();
+
+	// add by joewan 2011/8/11, avoid "" in the result vec.
+	if (len == 0)
+	{
+		return false;
+	}
+
+	return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// skip ang leading delimiters
+///////////////////////////////////////////////////////////////////////////////
+void StrTokenizer::SkipDelimiter()
+{
+	while (mCurrPos != mBuffer.end() && IsDelimiter(*mCurrPos))
+	{
+		++mCurrPos;
+	}
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// return true if the current character is delimiter
+///////////////////////////////////////////////////////////////////////////////
+bool StrTokenizer::IsDelimiter(char c)
+{
+	return (mDelimiter.find(c) != std::string::npos);
+}
+
+void StrTokenizer::GetSubStr(std::vector<std::string>& subStr)
+{
+	mCurrPos = mBuffer.begin();
+	std::string token;
+	while (Next(token))
+	{
+		subStr.push_back(token);
+	}
+}
+
+void StrTokenizer::Reset()
+{
+	mCurrPos = mBuffer.begin();
+}
+
+void StrTokenizer::Join(std::string& str, const std::string& separator)
+{
+	Reset();
+	bool first = true;
+	std::string token;
+	while (Next(token))
+	{
+		if (first)
+		{
+			str = token;
+			first = false;
+		}
+		else
+			str += separator + token;
+	}
+}
+
+bool StrTokenizer::IsEnd() const
+{
+	if (mBuffer.size() <= 0 || mCurrPos == mBuffer.end())
+	{
+		return true;
+	}
+	return false;
+}
+
+
+
+
 std::string GetFileName(const std::string& path);
+std::string GetFileDir(const std::string& path);
 std::string GetFileExtension(const std::string& path);
 std::string ReplaceString(const std::string src, const std::string &oldstr, const std::string &newstr);
 std::string ReplaceChar(const std::string src, char oldc, char newc);
 std::string Md5File(const std::string filename);
 std::string GetFileLastModifyTime(const std::string filepath);
 const char* GetRelativeFilename(const std::string &dir, const std::string &filepath);
+std::string GetAbsoluteFilename(const std::string &dir, const std::string &relativefilepath);
+void StringSplit(const std::string& target, const std::string& delim, std::vector< std::string >& rkVec);
 
 bool Moc(const std::string arg0, const std::string &outputDir
 	, const std::vector<std::string> &inputFiles
@@ -87,6 +250,12 @@ protected:
 		//clang::CompilerInstance &CI = getCompilerInstance();
 		//clang::ASTConsumer &consumer = CI.getASTConsumer();
 
+		if (mComsumerPtr->mExportEnums.empty() && mComsumerPtr->mExportClasses.empty())
+		{
+			std::cout << "\n\tNothing to export";
+			return;
+		}
+
 		std::string outfile = mOutputDir + "meta_" + GetFileName(mInputFilePath) + ".cpp";
 		std::ofstream out(outfile.c_str());
 		if (out.fail())
@@ -95,6 +264,13 @@ protected:
 		}
 
 		out << "#include \"" << GetRelativeFilename(mOutputDir, mInputFilePath) << "\"\n";
+		// meta include
+		std::string inputeFileDir = GetFileDir(mInputFilePath);
+		for (const std::string &inc : (mComsumerPtr->mPPCallbacks->mMetaIncludes))
+		{
+			std::string incAbsFilepath = GetAbsoluteFilename(inputeFileDir, inc);
+			out << "#include \"" << GetRelativeFilename(mOutputDir, incAbsFilepath) << "\"\n";
+		}
 
 		for (size_t i = 0; i < mComsumerPtr->mExportEnums.size(); ++i)
 		{
@@ -200,6 +376,7 @@ int main(int argc, const char **argv)
 			}
 			else if (argv[i][1] == 'I')
 			{
+				//std::cout << "\nInclude " << argv[i];
 				includePathes.push_back(argv[i]);
 			}
 			else if (argv[i][1] == 'O')
@@ -213,7 +390,7 @@ int main(int argc, const char **argv)
 		}
 	}
 
-	std::cout << "\n============================= Start SG Moc =====================";
+	std::cout << "\n============================= SG Moc Start =====================";
 	if (outDir[outDir.size() - 1] != '/' || outDir[outDir.size() - 1] != '\\')
 	{
 		outDir += "/";
@@ -258,8 +435,6 @@ int main(int argc, const char **argv)
 		needMocFiles.push_back(filepath);
 	}
 
-	std::cout << "\nSG Moc Start ...";
-	std::cout << "\nOut Dir: " << outDir;
 	if (needMocFiles.empty())
 	{
 		std::cout << "\nNothing to Moc";
@@ -268,7 +443,8 @@ int main(int argc, const char **argv)
 	{
 		Moc(argv[0], outDir, needMocFiles, includePathes);
 	}
-	std::cout << "\nSG Moc End";
+	
+	std::cout << "\n============================= SG Moc End =====================\n\n";
 
 	if (!forceMoc)
 	{
@@ -364,6 +540,32 @@ std::string GetFileName(const std::string& path)
 	return path.substr(pos, size);
 }
 
+std::string GetFileDir(const std::string& path)
+{
+	size_t pos0 = path.find_last_of('/');
+	size_t pos1 = path.find_last_of('\\');
+
+	size_t pos = std::string::npos;
+	if (pos0 != std::string::npos && pos1 != std::string::npos)
+	{
+		pos = pos0 > pos1 ? pos0 : pos1;
+	}
+	else if (pos0 != std::string::npos)
+	{
+		pos = pos0;
+	}
+	else if (pos1 != std::string::npos)
+	{
+		pos = pos1;
+	}
+	else
+	{
+		return "./";
+	}
+
+	return path.substr(0, pos + 1);
+
+}
 std::string Md5File(const std::string filepath)
 {
 	FILE *file = fopen(filepath.c_str(), "rb");
@@ -443,7 +645,7 @@ bool Moc(const std::string arg0, const std::string &outputDir
 		new clang::FileManager(clang::FileSystemOptions()));
 
 	std::shared_ptr<clang::PCHContainerOperations> PCHContainerOps = std::make_shared<clang::PCHContainerOperations>();
-
+	MocAction *action = 0;
 	for (const std::string &inputFilePath : inputFiles)
 	{
 		std::vector<std::string> args;
@@ -453,7 +655,7 @@ bool Moc(const std::string arg0, const std::string &outputDir
 
 		std::cout << "\nsgmoc " << inputFilePath;
 		
-		MocAction *action = new MocAction(outputDir, inputFilePath);
+		action = new MocAction(outputDir, inputFilePath);
 
 		clang::tooling::ToolInvocation Inv(args, action, Files.get(), PCHContainerOps);
 		//Inv.mapVirtualFile(f->filename, {f->content , f->size } );
@@ -463,6 +665,8 @@ bool Moc(const std::string arg0, const std::string &outputDir
 		//std::cout << "\n=========================end" << inputFilePath;
 	}
 
+	int i = 0;
+	++i;
 	return true;
 }
 
@@ -579,4 +783,47 @@ const char* GetRelativeFilename(const std::string &dir, const std::string &filep
 	// copy the rest of the filename into the result string
 	strcpy(&relativeFilename[rfMarker], &absoluteFilename[afMarker]);
 	return relativeFilename;
+}
+
+std::string GetAbsoluteFilename(const std::string &dir, const std::string &relativefilepath)
+{
+	std::string cd = ReplaceChar(dir, '\\', '/');
+	std::string af = ReplaceChar(relativefilepath, '\\', '/');
+
+	std::vector<std::string> dirToken;
+	StringSplit(cd, "/", dirToken);
+
+	std::vector<std::string> rfileToken;
+	StringSplit(af, "/", rfileToken);
+
+	for (const std::string &pathname : rfileToken)
+	{
+		if (pathname == ".")
+		{
+			continue;
+		}
+		else if (pathname == "..")
+		{
+			dirToken.erase(dirToken.end()-1);
+		}
+		else
+		{
+			dirToken.push_back(pathname);
+		}
+	}
+
+	std::string ret;
+	for (size_t i = 0; i < dirToken.size() - 1; ++i)
+	{
+		ret += dirToken[i] + "/";
+	}
+	ret += dirToken[dirToken.size() - 1];
+
+	return ret;
+}
+
+void StringSplit(const std::string& target, const std::string& delim, std::vector< std::string >& rkVec)
+{
+	StrTokenizer st(target, delim);
+	st.GetSubStr(rkVec);
 }

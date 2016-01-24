@@ -65,8 +65,7 @@ public:
 
 class sgASTConsumer : public clang::ASTConsumer
 {
-protected:
-    public:
+public:
     clang::CompilerInstance &mCompilerInstance;
     clang::ASTContext *mASTContext;
 
@@ -91,8 +90,8 @@ public:
 	virtual void HandleTranslationUnit(clang::ASTContext& Ctx) override;
 
 public:
-	void ParseClass(clang::CXXRecordDecl *RD, bool uplevelExport);
-	void ParseEnum(clang::EnumDecl *ED, bool uplevelExport);
+	void ParseClass(clang::CXXRecordDecl *RD);
+	void ParseEnum(clang::EnumDecl *ED);
 
 	void TopLevelParseDecl(clang::Decl *decl);
 
