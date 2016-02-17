@@ -30,6 +30,7 @@
 #include <llvm/Support/MD5.h>
 #include <clang/Tooling/CommonOptionsParser.h>
 
+int MSVC_VERTION = 0;
 
 class StrTokenizer
 {
@@ -200,6 +201,7 @@ std::string GetFileLastModifyTime(const std::string filepath);
 const char* GetRelativeFilename(const std::string &dir, const std::string &filepath);
 std::string GetAbsoluteFilename(const std::string &dir, const std::string &relativefilepath);
 void StringSplit(const std::string& target, const std::string& delim, std::vector< std::string >& rkVec);
+int GetBestMsvcVersion();
 
 bool Moc(const std::string arg0, const std::string &outputDir
 	, const std::vector<std::string> &inputFiles
@@ -388,6 +390,20 @@ int main(int argc, const char **argv)
 		{
 			inFiles.push_back(argv[i]);
 		}
+	}
+
+	int clangUsedVcVersion = GetBestMsvcVersion();
+	if (clangUsedVcVersion >= 14)
+	{
+		MSVC_VERTION = 1900;
+	}
+	else if (clangUsedVcVersion >= 10)
+	{
+		MSVC_VERTION = 1600;
+	}
+	else
+	{
+		MSVC_VERTION = 0;
 	}
 
 	std::cout << "\n============================= SG Moc Start =====================";
@@ -628,7 +644,18 @@ bool Moc(const std::string arg0, const std::string &outputDir
 	Argv.push_back("-fPIE");
 	Argv.push_back("-fPIC");
 	Argv.push_back("-w");
-	Argv.push_back("-fms-compatibility-version=19");
+
+	if (MSVC_VERTION == 1900)
+	{
+		Argv.push_back("-fms-compatibility-version=19");
+
+		std::cout << "\nUse MSVC 19";
+	}
+	else if (MSVC_VERTION == 1600)
+	{
+		Argv.push_back("-fms-compatibility-version=16");
+		std::cout << "\nUse MSVC 16";
+	}
 	//Argv.push_back("-Wall");
 	//Argv.push_back("-Wmicrosoft-include");
 	
@@ -826,4 +853,147 @@ void StringSplit(const std::string& target, const std::string& delim, std::vecto
 {
 	StrTokenizer st(target, delim);
 	st.GetSubStr(rkVec);
+}
+
+#ifdef _MSC_VER
+//
+
+#include <windows.h>
+#include <cstdio>
+
+static bool ReadRegFullStringValue(HKEY hkey, const char *valueName,
+	std::string &value) {
+	// FIXME: We should be using the W versions of the registry functions, but
+	// doing so requires UTF8 / UTF16 conversions similar to how we handle command
+	// line arguments.  The UTF8 conversion functions are not exposed publicly
+	// from LLVM though, so in order to do this we will probably need to create
+	// a registry abstraction in LLVMSupport that is Windows only.
+	DWORD result = 0;
+	DWORD valueSize = 0;
+	DWORD type = 0;
+	// First just query for the required size.
+	result = RegQueryValueEx(hkey, valueName, NULL, &type, NULL, &valueSize);
+	if (result != ERROR_SUCCESS || type != REG_SZ)
+		return false;
+	std::vector<BYTE> buffer(valueSize);
+	result = RegQueryValueEx(hkey, valueName, NULL, NULL, &buffer[0], &valueSize);
+	if (result == ERROR_SUCCESS)
+		value.assign(reinterpret_cast<const char *>(buffer.data()));
+	return result;
+}
+
+/// \brief Read registry string. from MSVCToolChain.cpp
+/// This also supports a means to look for high-versioned keys by use
+/// of a $VERSION placeholder in the key path.
+/// $VERSION in the key path is a placeholder for the version number,
+/// causing the highest value path to be searched for and used.
+/// I.e. "SOFTWARE\\Microsoft\\VisualStudio\\$VERSION".
+/// There can be additional characters in the component.  Only the numeric
+/// characters are compared.  This function only searches HKLM.
+static bool GetBestVCVersion(const char *keyPath, const char *valueName,
+	std::string &value, std::string *phValue, int &bestVersion)
+{
+	bestVersion = 0;
+
+	HKEY hRootKey = HKEY_LOCAL_MACHINE;
+	HKEY hKey = NULL;
+	long lResult;
+	bool returnValue = false;
+
+	const char *placeHolder = strstr(keyPath, "$VERSION");
+	std::string bestName;
+	// If we have a $VERSION placeholder, do the highest-version search.
+	if (placeHolder) {
+		const char *keyEnd = placeHolder - 1;
+		const char *nextKey = placeHolder;
+		// Find end of previous key.
+		while ((keyEnd > keyPath) && (*keyEnd != '\\'))
+			keyEnd--;
+		// Find end of key containing $VERSION.
+		while (*nextKey && (*nextKey != '\\'))
+			nextKey++;
+		size_t partialKeyLength = keyEnd - keyPath;
+		char partialKey[256];
+		if (partialKeyLength > sizeof(partialKey))
+			partialKeyLength = sizeof(partialKey);
+		strncpy(partialKey, keyPath, partialKeyLength);
+		partialKey[partialKeyLength] = '\0';
+		HKEY hTopKey = NULL;
+		lResult = RegOpenKeyEx(hRootKey, partialKey, 0, KEY_READ | KEY_WOW64_32KEY,
+			&hTopKey);
+		if (lResult == ERROR_SUCCESS) {
+			char keyName[256];
+			double bestValue = 0.0;
+			DWORD index, size = sizeof(keyName) - 1;
+			for (index = 0; RegEnumKeyEx(hTopKey, index, keyName, &size, NULL,
+				NULL, NULL, NULL) == ERROR_SUCCESS; index++) {
+				const char *sp = keyName;
+				while (*sp && !isdigit(*sp))
+					sp++;
+				if (!*sp)
+					continue;
+				const char *ep = sp + 1;
+				while (*ep && (isdigit(*ep) || (*ep == '.')))
+					ep++;
+				char numBuf[32];
+				strncpy(numBuf, sp, sizeof(numBuf) - 1);
+				numBuf[sizeof(numBuf) - 1] = '\0';
+				double dvalue = strtod(numBuf, NULL);
+				if (dvalue > bestValue) {
+					// Test that InstallDir is indeed there before keeping this index.
+					// Open the chosen key path remainder.
+					bestName = keyName;
+					// Append rest of key.
+					bestName.append(nextKey);
+					lResult = RegOpenKeyEx(hTopKey, bestName.c_str(), 0,
+						KEY_READ | KEY_WOW64_32KEY, &hKey);
+					if (lResult == ERROR_SUCCESS) {
+						lResult = ReadRegFullStringValue(hKey, valueName, value);
+						if (lResult == ERROR_SUCCESS) {
+							bestValue = dvalue;
+							if (phValue)
+								*phValue = bestName;
+							returnValue = true;
+
+							bestVersion = bestValue;
+						}
+						RegCloseKey(hKey);
+					}
+				}
+				size = sizeof(keyName) - 1;
+			}
+			RegCloseKey(hTopKey);
+		}
+	}
+	else {
+		lResult =
+			RegOpenKeyEx(hRootKey, keyPath, 0, KEY_READ | KEY_WOW64_32KEY, &hKey);
+		if (lResult == ERROR_SUCCESS) {
+			lResult = ReadRegFullStringValue(hKey, valueName, value);
+			if (lResult == ERROR_SUCCESS)
+				returnValue = true;
+			if (phValue)
+				phValue->clear();
+			RegCloseKey(hKey);
+		}
+	}
+	return returnValue;
+}
+
+#endif
+
+int GetBestMsvcVersion()
+{
+#ifdef _MSC_VER
+	std::string vsIDEInstallDir;
+	int bestVersion = 0;
+	if (!GetBestVCVersion("SOFTWARE\\Microsoft\\VisualStudio\\$VERSION", "InstallDir", vsIDEInstallDir, nullptr, bestVersion))
+	{
+		return 0;
+	}
+
+	return bestVersion;
+#else
+	return 0;
+#endif
 }
