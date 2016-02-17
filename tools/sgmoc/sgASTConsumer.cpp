@@ -148,11 +148,11 @@ void sgASTConsumer::ParseClass(clang::CXXRecordDecl *RD)
 
     for (auto it = RD->decls_begin(); it != RD->decls_end(); ++it) {
 
-		clang::Decl::Kind kind = it->getKind();
+		//clang::Decl::Kind kind = it->getKind();
 
 		if(clang::AccessSpecDecl *as = llvm::dyn_cast<clang::AccessSpecDecl>(*it))
 		{
-			clang::AccessSpecifier asName = as->getAccess();
+			//clang::AccessSpecifier asName = as->getAccess();
 		}
 		else if (clang::StaticAssertDecl *S = llvm::dyn_cast<clang::StaticAssertDecl>(*it) ) 
 		{

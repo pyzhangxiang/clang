@@ -310,7 +310,7 @@ protected:
 			std::string metaname = ReplaceString(def.typeName, "::", "__");
 			out << "\n\n" << metaBegin << "(" << metaname << ", " << def.typeName << ", " << def.baseClassTypeName << ")";
 
-			for (int ip = 0; ip < def.properties.size(); ++ip)
+			for (size_t ip = 0; ip < def.properties.size(); ++ip)
 			{
 				const PropertyDef &pdef = def.properties[ip];
 				if (pdef.isEnum)
@@ -688,7 +688,10 @@ bool Moc(const std::string arg0, const std::string &outputDir
 		//Inv.mapVirtualFile(f->filename, {f->content , f->size } );
 
 		bool ret = Inv.run();
-
+		if (!ret)
+		{
+			;
+		}
 		//std::cout << "\n=========================end" << inputFilePath;
 	}
 
