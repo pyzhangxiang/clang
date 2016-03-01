@@ -843,6 +843,10 @@ std::string GetAbsoluteFilename(const std::string &dir, const std::string &relat
 	}
 
 	std::string ret;
+    if(cd[0] == '/')
+    {
+        ret = "/";
+    }
 	for (size_t i = 0; i < dirToken.size() - 1; ++i)
 	{
 		ret += dirToken[i] + "/";

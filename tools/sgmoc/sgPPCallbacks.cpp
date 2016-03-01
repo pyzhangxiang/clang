@@ -1,7 +1,7 @@
 
 #include "sgPPCallbacks.h"
 #include "sgmetadefs-injected.h"
-#include <clang\Lex\MacroArgs.h>
+#include <clang/Lex/MacroArgs.h>
 
 clang::FileID CreateFileIDForMemBuffer(clang::Preprocessor &PP, std::unique_ptr<llvm::MemoryBuffer> Buf, clang::SourceLocation Loc)
 {
