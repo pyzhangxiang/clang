@@ -644,7 +644,7 @@ bool Moc(const std::string arg0, const std::string &outputDir
 	Argv.push_back("-fPIE");
 	Argv.push_back("-fPIC");
 	Argv.push_back("-w");
-
+	MSVC_VERTION = 1600;
 	if (MSVC_VERTION == 1900)
 	{
 		Argv.push_back("-fms-compatibility-version=19");
@@ -661,6 +661,7 @@ bool Moc(const std::string arg0, const std::string &outputDir
 	
 	Argv.push_back("-std=c++11");
 	Argv.push_back("-fsyntax-only");
+	Argv.push_back("-nostdinc++");	// do not try to find installed std include
 
 	//Argv.push_back("-I\"D:\\projects\\llvm\\tools\\clang\\tools\\sgmoc\\aa\"");
 	//Argv.push_back("-ID:\\projects\\llvm\\tools\\clang\\tools\\sgmoc");
